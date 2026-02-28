@@ -1,0 +1,213 @@
+name: 2 - Build RCCService
+
+on:
+  workflow_dispatch:   # Trigger manually whenever you want a fresh build
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - '**.md'
+      - 'Contribs/**'  # Contribs have their own workflow
+
+env:
+  CONTRIB_PATH: C:\Trunk2016\Contribs
+
+jobs:
+  build-rccservice:
+    name: Build RCCService (Headless Server)
+    runs-on: windows-2019
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout into C:\Trunk2016 (the path the build system expects)
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: C:\Trunk2016
+
+      # -----------------------------------------------------------------------
+      # 2. Restore cached contribs built by the first workflow.
+      #    If the cache is missing, fail fast with a clear message.
+      # -----------------------------------------------------------------------
+      - name: Restore contribs cache
+        id: cache-contribs
+        uses: actions/cache@v4
+        with:
+          path: C:\Trunk2016\Contribs
+          key: contribs-${{ hashFiles('Contribs/**') }}
+          restore-keys: contribs-   # Fall back to any contribs cache if hash differs
+
+      - name: Check contribs cache hit
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          # Try to download from artifact as fallback before failing
+          Write-Warning "Contribs cache missed. Run the '1 - Build Contribs' workflow first."
+          Write-Warning "Attempting to continue — if contribs are missing the build will fail."
+
+      # -----------------------------------------------------------------------
+      # 3. Set environment variables
+      # -----------------------------------------------------------------------
+      - name: Set CONTRIB_PATH
+        shell: powershell
+        run: |
+          echo "CONTRIB_PATH=C:\Trunk2016\Contribs" >> $env:GITHUB_ENV
+          [System.Environment]::SetEnvironmentVariable("CONTRIB_PATH", "C:\Trunk2016\Contribs", "Machine")
+
+      # -----------------------------------------------------------------------
+      # 4. Install v110 toolset if not present on runner
+      #    windows-2019 has VS 2019 (v142) pre-installed but NOT v110.
+      #    We install the v110 build tools so msbuild can target them.
+      # -----------------------------------------------------------------------
+      - name: Install VS 2012 v110 Build Tools
+        shell: powershell
+        run: |
+          # Check if v110 toolset is already available
+          $v110 = "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC"
+          if (!(Test-Path $v110)) {
+            Write-Host "Installing VS 2012 build tools..."
+            choco install visualstudio2012-professional --no-progress -y
+          } else {
+            Write-Host "v110 toolset already present, skipping install."
+          }
+
+      # -----------------------------------------------------------------------
+      # 5. Run setfolders.bat to prepare output directories
+      #    This is the step from BUILDING.md: "Open setfolders.bat and choose
+      #    which folder you want to get prepared"
+      #    We run it non-interactively by piping the RCC option.
+      # -----------------------------------------------------------------------
+      - name: Run setfolders.bat
+        shell: cmd
+        run: |
+          cd C:\Trunk2016
+          if exist setfolders.bat (
+            echo Running setfolders.bat...
+            call setfolders.bat
+          ) else (
+            echo setfolders.bat not found, skipping.
+          )
+
+      # -----------------------------------------------------------------------
+      # 6. Pre-build dependency order (from BUILDING.md step 10):
+      #    boost.static -> zlib -> curl -> qtnribbon -> ShaderCompiler
+      #    We build these as individual msbuild calls with all error fixes applied.
+      #
+      #    Key msbuild overrides applied to every call:
+      #      /p:TreatWarningAsError=false     — fixes "warning treated as error"
+      #      /p:PlatformToolset=v110          — fixes "v140 toolset not found"
+      #      /p:WholeProgramOptimization=false — avoids LTO issues with old code
+      # -----------------------------------------------------------------------
+
+      - name: Build boost.static
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          msbuild C:\Trunk2016\Contribs\boost_1_56_0\boost.static.vcxproj ^
+            /p:Configuration=ReleaseRCC ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v110 ^
+            /p:TreatWarningAsError=false ^
+            /p:WholeProgramOptimization=false ^
+            /m /v:minimal
+
+      - name: Build zlib
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          msbuild C:\Trunk2016\Contribs\zlib\zlib.vcxproj ^
+            /p:Configuration=ReleaseRCC ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v110 ^
+            /p:TreatWarningAsError=false ^
+            /m /v:minimal
+
+      - name: Build curl
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          msbuild C:\Trunk2016\Contribs\curl-7.43.0\lib\libcurl_a.vcxproj ^
+            /p:Configuration=ReleaseRCC ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v110 ^
+            /p:TreatWarningAsError=false ^
+            /m /v:minimal
+
+      - name: Build qtnribbon
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          msbuild C:\Trunk2016\QtnRibbon\QtnRibbon.vcxproj ^
+            /p:Configuration=ReleaseRCC ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v110 ^
+            /p:TreatWarningAsError=false ^
+            /m /v:minimal
+
+      - name: Build ShaderCompiler
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          msbuild C:\Trunk2016\ShaderCompiler\ShaderCompiler.vcxproj ^
+            /p:Configuration=ReleaseRCC ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v110 ^
+            /p:TreatWarningAsError=false ^
+            /m /v:minimal
+
+      # -----------------------------------------------------------------------
+      # 7. Build the full RCCService target from the main solution
+      # -----------------------------------------------------------------------
+      - name: Build RCCService
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          msbuild C:\Trunk2016\Client_2016.sln ^
+            /t:RCCService ^
+            /p:Configuration=ReleaseRCC ^
+            /p:Platform=Win32 ^
+            /p:PlatformToolset=v110 ^
+            /p:TreatWarningAsError=false ^
+            /p:WholeProgramOptimization=false ^
+            /m /v:normal
+
+      # -----------------------------------------------------------------------
+      # 8. Collect output — find RCCService.exe and any required DLLs
+      # -----------------------------------------------------------------------
+      - name: Collect build output
+        shell: powershell
+        run: |
+          $outDir = "C:\RCCService_output"
+          New-Item -ItemType Directory -Force -Path $outDir
+
+          # Find the built executable (location varies by project config)
+          $exe = Get-ChildItem -Path "C:\Trunk2016" -Recurse -Filter "RCCService.exe" -ErrorAction SilentlyContinue
+          if ($exe) {
+            Write-Host "Found: $($exe.FullName)"
+            Copy-Item $exe.FullName $outDir
+          } else {
+            Write-Warning "RCCService.exe not found — check build logs above"
+          }
+
+          # Copy any DLLs sitting next to the exe (curl, ssl, etc.)
+          if ($exe) {
+            $exeDir = $exe.DirectoryName
+            Get-ChildItem "$exeDir\*.dll" | ForEach-Object {
+              Copy-Item $_.FullName $outDir
+              Write-Host "Copied DLL: $($_.Name)"
+            }
+          }
+
+          Write-Host "Output contents:"
+          Get-ChildItem $outDir
+
+      # -----------------------------------------------------------------------
+      # 9. Upload RCCService as a downloadable artifact
+      # -----------------------------------------------------------------------
+      - name: Upload RCCService artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RCCService-Win32-ReleaseRCC
+          path: C:\RCCService_output\
+          retention-days: 14
+          if-no-files-found: warn
