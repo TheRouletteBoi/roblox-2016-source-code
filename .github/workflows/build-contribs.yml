@@ -1,0 +1,149 @@
+name: 1 - Build Contribs
+
+on:
+  workflow_dispatch: # Run manually — only needed once (or when contribs change)
+  push:
+    paths:
+      - 'Contribs/**'  # Auto-trigger only if contribs source changes
+
+env:
+  CONTRIB_PATH: C:\Trunk2016\Contribs
+
+jobs:
+  build-contribs:
+    name: Build All Contribs
+    runs-on: windows-2019  # Has MSVC, supports older toolsets, good VS 2012 compat
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: C:\Trunk2016
+
+      # -----------------------------------------------------------------------
+      # 2. Restore cache — skip everything if contribs are already cached
+      # -----------------------------------------------------------------------
+      - name: Cache compiled contribs
+        id: cache-contribs
+        uses: actions/cache@v4
+        with:
+          path: C:\Trunk2016\Contribs
+          key: contribs-${{ hashFiles('Contribs/**') }}
+
+      # -----------------------------------------------------------------------
+      # 3. Install VS 2012 / v110 Build Tools (needed by Qt, Boost, OpenSSL)
+      #    windows-2019 runners do NOT ship v110, so we pull it via choco.
+      # -----------------------------------------------------------------------
+      - name: Install VS 2012 Build Tools (v110 toolset)
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          choco install visualstudio2012-professional --no-progress -y
+          # Alternatively, if the above is unavailable on the runner, install
+          # the standalone v110 toolset:
+          # choco install windows-sdk-8.0 --no-progress -y
+
+      # -----------------------------------------------------------------------
+      # 4. Install Strawberry Perl (required by OpenSSL configure step)
+      # -----------------------------------------------------------------------
+      - name: Install Strawberry Perl
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: powershell
+        run: choco install strawberryperl --no-progress -y
+
+      # -----------------------------------------------------------------------
+      # 5. Set CONTRIB_PATH system environment variable for all subsequent steps
+      # -----------------------------------------------------------------------
+      - name: Set CONTRIB_PATH env var
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          echo "CONTRIB_PATH=C:\Trunk2016\Contribs" >> $env:GITHUB_ENV
+          [System.Environment]::SetEnvironmentVariable("CONTRIB_PATH", "C:\Trunk2016\Contribs", "Machine")
+
+      # -----------------------------------------------------------------------
+      # 6. Build OpenSSL 1.0.0c
+      #    Must come before Curl since curl links against it.
+      # -----------------------------------------------------------------------
+      - name: Build OpenSSL
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          cd C:\Trunk2016\Contribs\openssl
+          perl Configure VC-WIN32 --prefix=C:\Trunk2016\Contribs\openssl\out
+          call ms\32all.bat
+
+      # -----------------------------------------------------------------------
+      # 7. Build Qt 4.8.5
+      #    This is the longest step — easily 30-60 min on a free runner.
+      #    We strip examples/tests and skip demos to keep it as fast as possible.
+      # -----------------------------------------------------------------------
+      - name: Build Qt 4.8.5
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: cmd
+        timeout-minutes: 120
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          cd C:\Trunk2016\Contribs\Qt\4.8.5\win_VS2012
+          configure -make nmake -platform win32-msvc2012 ^
+            -prefix C:\Trunk2016\Contribs\Qt\4.8.5\win_VS2012 ^
+            -opensource -confirm-license ^
+            -opengl desktop ^
+            -nomake examples ^
+            -nomake tests ^
+            -nomake demos ^
+            -webkit -xmlpatterns ^
+            -no-phonon -no-phonon-backend -no-multimedia
+          nmake
+
+      # -----------------------------------------------------------------------
+      # 8. Build Boost 1.56.0
+      # -----------------------------------------------------------------------
+      - name: Build Boost 1.56.0
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          cd C:\Trunk2016\Contribs\boost_1_56_0
+          call bootstrap.bat
+          call build_boost.bat
+          b2 --toolset=msvc-11.0 variant=release link=static runtime-link=static threading=multi
+
+      # -----------------------------------------------------------------------
+      # 9. Build Curl 7.43.0
+      #    Build both libcurl (dll) and libcurl_a (static lib) projects.
+      # -----------------------------------------------------------------------
+      - name: Build Curl 7.43.0
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          cd C:\Trunk2016\Contribs\curl-7.43.0
+          msbuild lib\libcurl.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v110 /m
+          msbuild lib\libcurl_a.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v110 /m
+
+      # -----------------------------------------------------------------------
+      # 10. Build SDL 2.0.4
+      #     Fix: force PlatformToolset to v110 (VS2012), build as .lib then .dll
+      # -----------------------------------------------------------------------
+      - name: Build SDL 2.0.4
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
+          cd C:\Trunk2016\Contribs\SDL2-2.0.4
+          msbuild VisualC\SDL.sln /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v110 /m
+
+      # -----------------------------------------------------------------------
+      # 11. Upload compiled contribs as artifact (backup, in case cache expires)
+      # -----------------------------------------------------------------------
+      - name: Upload contribs artifact
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiled-contribs
+          path: C:\Trunk2016\Contribs
+          retention-days: 30
