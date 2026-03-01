@@ -12,7 +12,7 @@ env:
 jobs:
   build-contribs:
     name: Build All Contribs
-    runs-on: windows-2019  # Has MSVC, supports older toolsets, good VS 2012 compat
+    runs-on: windows-latest  # Has MSVC, supports older toolsets, good VS 2012 compat
 
     steps:
       # -----------------------------------------------------------------------
