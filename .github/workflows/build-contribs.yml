@@ -7,7 +7,7 @@ on:
       - 'Contribs/**'  # Auto-trigger only if contribs source changes
 
 env:
-  CONTRIB_PATH: C:\Trunk2016\Contribs
+  CONTRIB_PATH: ${{ github.workspace }}\Trunk2016\Contribs
 
 jobs:
   build-contribs:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          path: C:\Trunk2016
+          path: Trunk2016
 
       # -----------------------------------------------------------------------
       # 2. Restore cache — skip everything if contribs are already cached
@@ -30,7 +30,7 @@ jobs:
         id: cache-contribs
         uses: actions/cache@v4
         with:
-          path: C:\Trunk2016\Contribs
+          path: ${{ github.workspace }}\Trunk2016\Contribs
           key: contribs-${{ hashFiles('Contribs/**') }}
 
       # -----------------------------------------------------------------------
@@ -61,8 +61,8 @@ jobs:
         if: steps.cache-contribs.outputs.cache-hit != 'true'
         shell: powershell
         run: |
-          echo "CONTRIB_PATH=C:\Trunk2016\Contribs" >> $env:GITHUB_ENV
-          [System.Environment]::SetEnvironmentVariable("CONTRIB_PATH", "C:\Trunk2016\Contribs", "Machine")
+          echo "CONTRIB_PATH=${{ github.workspace }}\Trunk2016\Contribs" >> $env:GITHUB_ENV
+          [System.Environment]::SetEnvironmentVariable("CONTRIB_PATH", "${{ github.workspace }}\Trunk2016\Contribs", "Machine")
 
       # -----------------------------------------------------------------------
       # 6. Build OpenSSL 1.0.0c
@@ -73,8 +73,8 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
-          cd C:\Trunk2016\Contribs\openssl
-          perl Configure VC-WIN32 --prefix=C:\Trunk2016\Contribs\openssl\out
+          cd ${{ github.workspace }}\Trunk2016\Contribs\openssl
+          perl Configure VC-WIN32 --prefix=${{ github.workspace }}\Trunk2016\Contribs\openssl\out
           call ms\32all.bat
 
       # -----------------------------------------------------------------------
@@ -88,9 +88,9 @@ jobs:
         timeout-minutes: 120
         run: |
           call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
-          cd C:\Trunk2016\Contribs\Qt\4.8.5\win_VS2012
+          cd ${{ github.workspace }}\Trunk2016\Contribs\Qt\4.8.5\win_VS2012
           configure -make nmake -platform win32-msvc2012 ^
-            -prefix C:\Trunk2016\Contribs\Qt\4.8.5\win_VS2012 ^
+            -prefix ${{ github.workspace }}\Trunk2016\Contribs\Qt\4.8.5\win_VS2012 ^
             -opensource -confirm-license ^
             -opengl desktop ^
             -nomake examples ^
@@ -107,7 +107,7 @@ jobs:
         if: steps.cache-contribs.outputs.cache-hit != 'true'
         shell: cmd
         run: |
-          cd C:\Trunk2016\Contribs\boost_1_56_0
+          cd ${{ github.workspace }}\Trunk2016\Contribs\boost_1_56_0
           call bootstrap.bat
           call build_boost.bat
           b2 --toolset=msvc-11.0 variant=release link=static runtime-link=static threading=multi
@@ -121,7 +121,7 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
-          cd C:\Trunk2016\Contribs\curl-7.43.0
+          cd ${{ github.workspace }}\Trunk2016\Contribs\curl-7.43.0
           msbuild lib\libcurl.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v110 /m
           msbuild lib\libcurl_a.vcxproj /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v110 /m
 
@@ -134,7 +134,7 @@ jobs:
         shell: cmd
         run: |
           call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
-          cd C:\Trunk2016\Contribs\SDL2-2.0.4
+          cd ${{ github.workspace }}\Trunk2016\Contribs\SDL2-2.0.4
           msbuild VisualC\SDL.sln /p:Configuration=Release /p:Platform=Win32 /p:PlatformToolset=v110 /m
 
       # -----------------------------------------------------------------------
@@ -145,5 +145,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: compiled-contribs
-          path: C:\Trunk2016\Contribs
+          path: ${{ github.workspace }}\Trunk2016\Contribs
           retention-days: 30
