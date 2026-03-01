@@ -44,6 +44,14 @@ jobs:
       # 3. Install VS 2012 / v110 Build Tools (needed by Qt, Boost, OpenSSL)
       #    windows-2019 runners do NOT ship v110, so we pull it via choco.
       # -----------------------------------------------------------------------
+      - name: Install VS 2012 Build Tools (v110 toolset)
+        if: steps.cache-contribs.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          # choco install visualstudio2012-professional --no-progress -y
+          # Alternatively, if the above is unavailable on the runner, install
+          # the standalone v110 toolset:
+          choco install windows-sdk-8.0 --no-progress -y
 
       # -----------------------------------------------------------------------
       # 4. Install Strawberry Perl (required by OpenSSL configure step)
@@ -75,10 +83,10 @@ jobs:
         if: steps.cache-contribs.outputs.cache-hit != 'true'
         shell: cmd
         run: |
+          call "C:\Program Files (x86)\Microsoft Visual Studio 11.0\VC\vcvarsall.bat" x86
           cd ${{ github.workspace }}\Trunk2016\Contribs\openssl
-          perl Configure VC-WIN32 --prefix="${{ github.workspace }}\Trunk2016\Contribs\openssl\out"
-          nmake
-          nmake install
+          perl Configure VC-WIN32 --prefix=${{ github.workspace }}\Trunk2016\Contribs\openssl\out
+          call ms\32all.bat
 
       # -----------------------------------------------------------------------
       # 7. Build Qt 4.8.5
