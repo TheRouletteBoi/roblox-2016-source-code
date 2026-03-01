@@ -76,7 +76,7 @@ jobs:
         shell: cmd
         run: |
           cd ${{ github.workspace }}\Trunk2016\Contribs\openssl
-          perl Configure VC-WIN32 --prefix=${{ github.workspace }}\Trunk2016\Contribs\openssl\out
+          perl Configure VC-WIN32 --prefix="${{ github.workspace }}\Trunk2016\Contribs\openssl\out"
           nmake
           nmake install
 
