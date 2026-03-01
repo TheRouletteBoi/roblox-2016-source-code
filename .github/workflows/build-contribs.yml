@@ -23,6 +23,10 @@ jobs:
         with:
           path: Trunk2016
 
+      - name: Enable long paths (system)
+        shell: powershell
+        run: git config --system core.longpaths true
+
       # -----------------------------------------------------------------------
       # 2. Restore cache — skip everything if contribs are already cached
       # -----------------------------------------------------------------------
